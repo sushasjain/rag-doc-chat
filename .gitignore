@@ -1,0 +1,28 @@
+# Virtual Environment
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment
+.env
+.env.*
+
+# ChromaDB
+db/
+
+# Runtime files
+chat_history.json
+temp.pdf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Claude
+.claude/
