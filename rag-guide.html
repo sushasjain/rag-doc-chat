@@ -1,0 +1,978 @@
+<title>DocChat RAG Project — Concepts Guide</title>
+<style>
+/* ── Tokens ── */
+:root {
+  --bg:           #F8F6F2;
+  --surface:      #EFECE7;
+  --border:       #DDD9D0;
+  --text:         #1C1C1C;
+  --muted:        #6B6560;
+  --accent:       #D97757;
+  --accent-bg:    rgba(217,119,87,.09);
+  --code-bg:      #E8E5E0;
+  --num-color:    rgba(217,119,87,.07);
+  --heading-font: Georgia, 'Times New Roman', serif;
+  --body-font:    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --code-font:    'Courier New', Courier, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #1A1A1A;
+    --surface:   #242424;
+    --border:    #2F2F2F;
+    --text:      #ECECEC;
+    --muted:     #888;
+    --accent:    #D97757;
+    --accent-bg: rgba(217,119,87,.08);
+    --code-bg:   #141414;
+    --num-color: rgba(217,119,87,.05);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#1A1A1A;--surface:#242424;--border:#2F2F2F;--text:#ECECEC;
+  --muted:#888;--accent:#D97757;--accent-bg:rgba(217,119,87,.08);
+  --code-bg:#141414;--num-color:rgba(217,119,87,.05);
+}
+:root[data-theme="light"] {
+  --bg:#F8F6F2;--surface:#EFECE7;--border:#DDD9D0;--text:#1C1C1C;
+  --muted:#6B6560;--accent:#D97757;--accent-bg:rgba(217,119,87,.09);
+  --code-bg:#E8E5E0;--num-color:rgba(217,119,87,.07);
+}
+
+/* ── Reset & base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body-font);
+  font-size: 0.91rem;
+  line-height: 1.72;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Print banner ── */
+.print-note {
+  background: var(--accent-bg);
+  border-left: 3px solid var(--accent);
+  padding: 0.55rem 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+.print-note strong { color: var(--accent); }
+
+/* ── Cover ── */
+.cover {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 3.5rem 2rem 2.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.cover-eyebrow {
+  font-family: var(--body-font);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+}
+.cover h1 {
+  font-family: var(--heading-font);
+  font-size: 2.4rem;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--text);
+  text-wrap: balance;
+  margin-bottom: 0.85rem;
+}
+.cover-sub {
+  font-size: 0.95rem;
+  color: var(--muted);
+  max-width: 560px;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+.cover-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.tag {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── TOC ── */
+.toc-wrap {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.toc-label {
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+.toc {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15rem 2rem;
+  list-style: none;
+}
+.toc a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px dotted var(--border);
+  transition: color 0.15s;
+}
+.toc a:hover { color: var(--accent); }
+.toc-num {
+  font-size: 0.62rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  width: 1.4rem;
+}
+
+/* ── Page wrapper ── */
+.page { max-width: 780px; margin: 0 auto; padding: 0 2rem; }
+
+/* ── Section ── */
+.section {
+  position: relative;
+  padding: 3rem 0 2rem;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.section-watermark {
+  position: absolute;
+  top: 1.5rem;
+  right: -0.5rem;
+  font-family: var(--heading-font);
+  font-size: 7rem;
+  font-weight: 400;
+  color: var(--num-color);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: -0.04em;
+}
+.section-eyebrow {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+.section h2 {
+  font-family: var(--heading-font);
+  font-size: 1.55rem;
+  font-weight: 400;
+  color: var(--text);
+  text-wrap: balance;
+  padding-left: 0.875rem;
+  border-left: 3px solid var(--accent);
+  margin-bottom: 1.25rem;
+  line-height: 1.3;
+}
+.section h3 {
+  font-family: var(--body-font);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 1.5rem 0 0.5rem;
+}
+.section p { margin-bottom: 0.85rem; }
+.section p:last-child { margin-bottom: 0; }
+.section ul, .section ol {
+  padding-left: 1.25rem;
+  margin-bottom: 0.85rem;
+}
+.section li { margin-bottom: 0.3rem; }
+
+/* ── Analogy box ── */
+.analogy {
+  background: var(--accent-bg);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  padding: 0.875rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.87rem;
+}
+.analogy-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.3rem;
+}
+
+/* ── Info box ── */
+.info-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.875rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.86rem;
+}
+.info-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+/* ── Code ── */
+code {
+  font-family: var(--code-font);
+  font-size: 0.82em;
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  color: var(--accent);
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-family: var(--code-font);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.comment { color: var(--muted); }
+.kw { color: var(--accent); }
+
+/* ── Pipeline diagram ── */
+.pipeline {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+.pipeline-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 600px;
+}
+.pipe-node {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 90px;
+}
+.pipe-node.accent {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pipe-node small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.63rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+.pipe-arrow {
+  color: var(--border);
+  font-size: 1rem;
+  padding: 0 0.3rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.pipe-arrow::after { content: '→'; }
+
+/* ── Two-col layout ── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.875rem;
+  font-size: 0.85rem;
+}
+.card-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+}
+
+/* ── Param table ── */
+.param-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin: 1rem 0;
+}
+.param-table th {
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 2px solid var(--border);
+}
+.param-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.param-table td:first-child { font-family: var(--code-font); color: var(--accent); font-size: 0.78rem; }
+.param-table tr:last-child td { border-bottom: none; }
+
+/* ── Glossary ── */
+.gloss-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.gloss-item {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+}
+.gloss-term {
+  font-family: var(--code-font);
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+.gloss-def { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+/* ── Footer ── */
+.guide-footer {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* ── Print ── */
+@media print {
+  :root { --bg:#fff; --surface:#f5f5f5; --border:#ddd; --text:#111; --muted:#555;
+          --accent:#C0623A; --accent-bg:rgba(192,98,58,.06); --code-bg:#f0f0f0; --num-color:rgba(192,98,58,.05); }
+  .print-note { display: none; }
+  .section { page-break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+  pre { white-space: pre-wrap; word-break: break-all; }
+}
+@media (max-width: 600px) {
+  .toc { grid-template-columns: 1fr; }
+  .two-col { grid-template-columns: 1fr; }
+  .gloss-grid { grid-template-columns: 1fr; }
+  .cover h1 { font-size: 1.8rem; }
+  .section-watermark { font-size: 5rem; }
+}
+</style>
+
+<!-- Print note -->
+<div class="print-note">
+  To save as PDF: <strong>Ctrl+P</strong> (or Cmd+P on Mac) → change destination to <strong>Save as PDF</strong> → Save
+</div>
+
+<!-- Cover -->
+<div class="cover">
+  <div class="cover-eyebrow">DocChat Project</div>
+  <h1>The RAG Stack<br>— A Concept Guide</h1>
+  <p class="cover-sub">Every library, model, and pattern used in this project — explained clearly, from the ground up. Read it to understand what each piece does, why it exists, and how they connect into the finished app.</p>
+  <div class="cover-tags">
+    <span class="tag">RAG</span>
+    <span class="tag">LangChain</span>
+    <span class="tag">ChromaDB</span>
+    <span class="tag">HuggingFace Embeddings</span>
+    <span class="tag">Ollama · Mistral</span>
+    <span class="tag">Streamlit</span>
+    <span class="tag">Python 3.12</span>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="toc-wrap">
+  <div class="toc-label">Contents</div>
+  <ul class="toc">
+    <li><a href="#s1"><span class="toc-num">01</span>What is RAG?</a></li>
+    <li><a href="#s2"><span class="toc-num">02</span>The Full Pipeline</a></li>
+    <li><a href="#s3"><span class="toc-num">03</span>PDF Loading</a></li>
+    <li><a href="#s4"><span class="toc-num">04</span>Text Chunking</a></li>
+    <li><a href="#s5"><span class="toc-num">05</span>Text Embeddings</a></li>
+    <li><a href="#s6"><span class="toc-num">06</span>ChromaDB</a></li>
+    <li><a href="#s7"><span class="toc-num">07</span>Ollama &amp; Mistral</a></li>
+    <li><a href="#s8"><span class="toc-num">08</span>LangChain</a></li>
+    <li><a href="#s9"><span class="toc-num">09</span>RetrievalQA Chain</a></li>
+    <li><a href="#s10"><span class="toc-num">10</span>Streamlit</a></li>
+    <li><a href="#s11"><span class="toc-num">11</span>Performance Patterns</a></li>
+    <li><a href="#s12"><span class="toc-num">12</span>Glossary</a></li>
+  </ul>
+</div>
+
+<!-- ── Section 1 ── -->
+<div class="page">
+<section class="section" id="s1">
+  <div class="section-watermark">01</div>
+  <div class="section-eyebrow">Foundation</div>
+  <h2>What is RAG?</h2>
+
+  <p><strong>RAG</strong> stands for <strong>Retrieval-Augmented Generation</strong>. It is a technique that makes a language model answer questions about documents it was never trained on — by first <em>retrieving</em> the relevant text, then <em>generating</em> an answer from it.</p>
+
+  <div class="analogy">
+    <div class="analogy-label">Analogy</div>
+    Imagine giving an open-book exam. Instead of memorising the entire textbook (which is what a plain LLM does — it memorises its training data), you open the book, find the relevant paragraph, and write your answer. RAG is that open-book strategy for AI.
+  </div>
+
+  <h3>Why not just use an LLM directly?</h3>
+  <p>A plain LLM like Mistral was trained on data up to a certain date. It knows nothing about <em>your</em> PDF. You could paste the whole PDF into the prompt, but:</p>
+  <ul>
+    <li>LLMs have a <strong>context window limit</strong> — most models can only read a few thousand words at once.</li>
+    <li>Longer contexts slow the model down and cost more.</li>
+    <li>The model can lose track of information buried deep in a long context ("lost in the middle" problem).</li>
+  </ul>
+
+  <h3>How RAG solves this</h3>
+  <p>RAG breaks the problem into two steps:</p>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Step 1 — Retrieve</div>
+      Convert the user's question into a vector. Search the document's pre-embedded chunks for the most similar ones. Pull only those (typically 3–5 chunks) into the context.
+    </div>
+    <div class="card">
+      <div class="card-title">Step 2 — Generate</div>
+      Feed those chunks + the original question to the LLM. It now has the exact relevant paragraphs right in front of it and can answer accurately.
+    </div>
+  </div>
+
+  <p>The result: the LLM only ever sees a small, highly relevant slice of the document — exactly what it needs, nothing more.</p>
+</section>
+
+<!-- ── Section 2 ── -->
+<section class="section" id="s2">
+  <div class="section-watermark">02</div>
+  <div class="section-eyebrow">Architecture</div>
+  <h2>The Full Pipeline</h2>
+
+  <p>Your project runs two distinct pipelines. The <strong>ingestion pipeline</strong> runs once when a PDF is uploaded. The <strong>query pipeline</strong> runs every time the user sends a message.</p>
+
+  <h3>Ingestion — when a PDF is uploaded</h3>
+  <div class="pipeline">
+    <div class="pipeline-row">
+      <div class="pipe-node accent">PDF File<small>uploaded</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">PyPDFLoader<small>extract text</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">Text Splitter<small>chunk it</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">MiniLM<small>embed chunks</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node accent">ChromaDB<small>store vectors</small></div>
+    </div>
+  </div>
+
+  <h3>Query — when the user asks a question</h3>
+  <div class="pipeline">
+    <div class="pipeline-row">
+      <div class="pipe-node accent">User Question</div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">MiniLM<small>embed question</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">ChromaDB<small>similarity search</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">Top-k Chunks<small>retrieved context</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node">Mistral<small>generate answer</small></div>
+      <div class="pipe-arrow"></div>
+      <div class="pipe-node accent">Answer</div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="info-label">Key insight</div>
+    The same embedding model (<code>all-MiniLM-L6-v2</code>) is used in both pipelines. Chunks and questions are embedded in the same vector space, which is why similarity search works — the question vector lands near the chunk vectors that contain the answer.
+  </div>
+</section>
+
+<!-- ── Section 3 ── -->
+<section class="section" id="s3">
+  <div class="section-watermark">03</div>
+  <div class="section-eyebrow">Document Processing</div>
+  <h2>PDF Loading — PyPDFLoader</h2>
+
+  <p><code>PyPDFLoader</code> is a LangChain wrapper around the <code>pypdf</code> library. It opens a PDF file, reads each page, and returns a list of <code>Document</code> objects — one per page.</p>
+
+<pre><code><span class="kw">from</span> langchain_community.document_loaders <span class="kw">import</span> PyPDFLoader
+
+loader = PyPDFLoader(<span class="kw">"temp.pdf"</span>)
+docs = loader.load()
+<span class="comment"># docs is a list of Document objects
+# Each Document has:
+#   .page_content  — the raw text of that page
+#   .metadata      — {"source": "temp.pdf", "page": 0}</span></code></pre>
+
+  <h3>What a Document object contains</h3>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">page_content</div>
+      The raw extracted text of the page. Quality depends on the PDF — text-based PDFs extract cleanly; scanned PDFs are images and need OCR (not handled here).
+    </div>
+    <div class="card">
+      <div class="card-title">metadata</div>
+      A dictionary: <code>{"source": "temp.pdf", "page": 3}</code>. The page number is what your app shows in the "Sources" expander after each answer.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="info-label">Why save to temp.pdf first?</div>
+    Streamlit's <code>st.file_uploader</code> gives you an in-memory file object, not a path on disk. <code>PyPDFLoader</code> needs a file path, so you write the bytes to <code>temp.pdf</code> first, then pass that path to the loader.
+  </div>
+</section>
+
+<!-- ── Section 4 ── -->
+<section class="section" id="s4">
+  <div class="section-watermark">04</div>
+  <div class="section-eyebrow">Document Processing</div>
+  <h2>Text Chunking — RecursiveCharacterTextSplitter</h2>
+
+  <p>A 44-page PDF might contain 50,000 words. You can't embed the whole thing as one unit — you need to break it into small, searchable chunks. <code>RecursiveCharacterTextSplitter</code> does this intelligently.</p>
+
+  <div class="analogy">
+    <div class="analogy-label">Analogy</div>
+    Think of it like cutting a long newspaper article into index cards. Each card has enough context to be useful on its own, and cards from the same paragraph share some overlap so meaning isn't lost at the seam.
+  </div>
+
+<pre><code>splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,     <span class="comment"># max characters per chunk</span>
+    chunk_overlap=50    <span class="comment"># characters shared between adjacent chunks</span>
+)
+docs = splitter.split_documents(docs)</code></pre>
+
+  <h3>Parameters explained</h3>
+  <table class="param-table">
+    <thead>
+      <tr><th>Parameter</th><th>Value used</th><th>What it means</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>chunk_size</td>
+        <td>500</td>
+        <td>Each chunk will be at most 500 characters (~80–100 words). Small enough for the embedding model to encode accurately; large enough to hold a complete thought.</td>
+      </tr>
+      <tr>
+        <td>chunk_overlap</td>
+        <td>50</td>
+        <td>The last 50 characters of chunk N are repeated at the start of chunk N+1. This prevents answers from being cut off when the relevant information straddles a boundary.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Why "Recursive"?</h3>
+  <p>The splitter tries to split on natural boundaries in order: <code>"\n\n"</code> (paragraphs) → <code>"\n"</code> (lines) → <code>" "</code> (words) → characters. It only uses the next separator if the chunk is still too big. This preserves sentence structure wherever possible.</p>
+</section>
+
+<!-- ── Section 5 ── -->
+<section class="section" id="s5">
+  <div class="section-watermark">05</div>
+  <div class="section-eyebrow">Machine Learning</div>
+  <h2>Text Embeddings — all-MiniLM-L6-v2</h2>
+
+  <p>An <strong>embedding</strong> is a list of numbers (a vector) that represents the <em>meaning</em> of a piece of text. Two pieces of text with similar meanings will have vectors that are close together in space; unrelated texts will have vectors far apart.</p>
+
+  <div class="analogy">
+    <div class="analogy-label">Analogy</div>
+    Imagine placing every sentence on a giant map where meaning determines location. "The dog chased the cat" and "A puppy ran after the kitten" land near each other on this map. "The stock market fell" lands far away. Embeddings are the GPS coordinates on that map.
+  </div>
+
+  <h3>The model: all-MiniLM-L6-v2</h3>
+  <p>This is a lightweight sentence-transformer model from HuggingFace. It converts any text into a <strong>384-dimensional vector</strong> (a list of 384 decimal numbers). It was trained specifically for <em>semantic similarity</em> tasks — meaning it's optimised to group similar-meaning text close together.</p>
+
+  <table class="param-table">
+    <thead><tr><th>Property</th><th>Value</th><th>Why it matters</th></tr></thead>
+    <tbody>
+      <tr><td>Output size</td><td>384 dimensions</td><td>Small enough to be fast, large enough to be expressive</td></tr>
+      <tr><td>Model size</td><td>~23 MB</td><td>Downloads and loads quickly; runs on CPU</td></tr>
+      <tr><td>Max input</td><td>256 tokens (~200 words)</td><td>Reason chunk_size=500 chars works: most English chunks stay under this</td></tr>
+      <tr><td>Runs locally</td><td>Yes</td><td>No API key, no internet required after first download</td></tr>
+    </tbody>
+  </table>
+
+<pre><code><span class="kw">from</span> langchain_community.embeddings <span class="kw">import</span> HuggingFaceEmbeddings
+
+embedding = HuggingFaceEmbeddings(model_name=<span class="kw">"all-MiniLM-L6-v2"</span>)
+
+<span class="comment"># Embed a single text (returns a list of 384 floats)</span>
+vector = embedding.embed_query(<span class="kw">"What is attention mechanism?"</span>)
+print(len(vector))  <span class="comment"># → 384</span></code></pre>
+
+  <h3>Similarity search</h3>
+  <p>When a user asks a question, it gets embedded into the same 384-dimensional space. ChromaDB then finds the stored chunk vectors that are <em>closest</em> to the question vector using <strong>cosine similarity</strong> — measuring the angle between vectors rather than their distance, which is more robust for text.</p>
+</section>
+
+<!-- ── Section 6 ── -->
+<section class="section" id="s6">
+  <div class="section-watermark">06</div>
+  <div class="section-eyebrow">Storage</div>
+  <h2>Vector Database — ChromaDB</h2>
+
+  <p>A <strong>vector database</strong> is a database built specifically to store and search vectors efficiently. Unlike a regular database that searches by exact match (SQL <code>WHERE name = 'Alice'</code>), a vector database searches by <em>similarity</em> — "find me the 4 vectors closest to this query vector."</p>
+
+  <div class="analogy">
+    <div class="analogy-label">Analogy</div>
+    A regular database is like looking up a word in a dictionary — you need the exact spelling. A vector database is like a "sounds like" search — it finds things that are conceptually close even if the words are different.
+  </div>
+
+  <h3>ChromaDB in your project</h3>
+<pre><code><span class="comment"># Ingestion: create collection from documents</span>
+vectordb = Chroma.from_documents(
+    documents=docs,
+    embedding=embedding,
+    persist_directory=<span class="kw">"db"</span>   <span class="comment"># saved to disk in ./db/</span>
+)
+
+<span class="comment"># Query: load the saved collection</span>
+vectordb = Chroma(
+    persist_directory=<span class="kw">"db"</span>,
+    embedding_function=embedding
+)
+retriever = vectordb.as_retriever()  <span class="comment"># retrieves top-4 chunks by default</span></code></pre>
+
+  <h3>What's stored in the <code>./db/</code> folder?</h3>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">chroma.sqlite3</div>
+      A SQLite database file that stores metadata, collection configurations, and the text content of each chunk alongside its vector.
+    </div>
+    <div class="card">
+      <div class="card-title">HNSW index</div>
+      The actual vector index — a data structure (Hierarchical Navigable Small World graph) that enables fast approximate nearest-neighbour search even over millions of vectors.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="info-label">Why not just use NumPy?</div>
+    You could compute cosine similarity over all vectors with NumPy. For 100 chunks it's fine. But for a 500-page document with 2,000 chunks, or across multiple documents, a proper index is orders of magnitude faster. ChromaDB also persists data to disk so you don't re-embed on every restart.
+  </div>
+</section>
+
+<!-- ── Section 7 ── -->
+<section class="section" id="s7">
+  <div class="section-watermark">07</div>
+  <div class="section-eyebrow">Language Model</div>
+  <h2>Ollama &amp; Mistral</h2>
+
+  <p><strong>Ollama</strong> is a tool that lets you run large language models locally on your own machine. It handles downloading models, managing their memory, and serving them through a local HTTP API at <code>http://localhost:11434</code>. Your Python code never needs an API key or internet connection when talking to Ollama.</p>
+
+  <h3>Why run locally?</h3>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Privacy</div>
+      Your PDF content never leaves your machine. Crucial for confidential documents — financial reports, legal contracts, medical records.
+    </div>
+    <div class="card">
+      <div class="card-title">Cost</div>
+      No per-token charges. You can run millions of tokens for free (just electricity and hardware). Cloud APIs like OpenAI charge per use.
+    </div>
+    <div class="card">
+      <div class="card-title">Control</div>
+      The model never changes under you. No API deprecations, no model updates that alter behaviour, no rate limits.
+    </div>
+    <div class="card">
+      <div class="card-title">Offline</div>
+      Works with no internet after first download. Useful for air-gapped environments or travel.
+    </div>
+  </div>
+
+  <h3>Mistral 7B</h3>
+  <p>Mistral 7B is an open-weight LLM developed by Mistral AI (France). "7B" means it has 7 billion parameters. Key properties:</p>
+  <ul>
+    <li><strong>Instruction-following:</strong> it understands prompts like "Answer the question based only on the context below."</li>
+    <li><strong>Context window:</strong> 32,768 tokens — more than enough for the 3–5 retrieved chunks plus the question.</li>
+    <li><strong>Speed:</strong> On a modern CPU, a typical answer takes 5–30 seconds. With a GPU, under 5 seconds.</li>
+    <li><strong>Quality:</strong> Competitive with GPT-3.5 on many benchmarks, especially instruction-following and reasoning tasks.</li>
+  </ul>
+
+<pre><code><span class="kw">from</span> langchain_community.llms <span class="kw">import</span> Ollama
+
+llm = Ollama(model=<span class="kw">"mistral"</span>)
+<span class="comment"># Ollama must be running: `ollama serve`
+# Model must be downloaded: `ollama pull mistral`
+# LangChain sends the prompt to http://localhost:11434</span></code></pre>
+</section>
+
+<!-- ── Section 8 ── -->
+<section class="section" id="s8">
+  <div class="section-watermark">08</div>
+  <div class="section-eyebrow">Framework</div>
+  <h2>LangChain</h2>
+
+  <p>LangChain is a Python framework for building applications powered by language models. It provides standard interfaces and pre-built "chains" so you don't have to write the glue code yourself. Your project uses three LangChain packages:</p>
+
+  <table class="param-table">
+    <thead><tr><th>Package</th><th>What it provides in your project</th></tr></thead>
+    <tbody>
+      <tr><td>langchain</td><td>Core abstractions: <code>Document</code>, <code>Chain</code>, <code>RetrievalQA</code></td></tr>
+      <tr><td>langchain-community</td><td>Integrations: <code>PyPDFLoader</code>, <code>HuggingFaceEmbeddings</code>, <code>Ollama</code>, <code>Chroma</code></td></tr>
+      <tr><td>langchain-text-splitters</td><td><code>RecursiveCharacterTextSplitter</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Core concept: the Chain</h3>
+  <p>A LangChain "chain" is a reusable pipeline of steps. You define each step once, then call the chain with an input and it runs all steps in order. Chains are composable — you can plug them together to build complex workflows.</p>
+
+  <div class="analogy">
+    <div class="analogy-label">Analogy</div>
+    Think of a chain like a Unix pipe: <code>cat file.txt | grep keyword | sort | uniq</code>. Each command does one thing; they compose into a larger operation. LangChain chains work the same way — each link transforms the data and passes it to the next.
+  </div>
+
+  <h3>Why use LangChain at all?</h3>
+  <p>Without LangChain, you'd write code to: load the PDF, split text, call the embedding model, talk to the vector DB, format a prompt with context, call the LLM, and parse the output. LangChain packages all of this behind standard interfaces, making it trivial to swap components — change <code>Ollama</code> to <code>OpenAI</code>, or <code>Chroma</code> to <code>Pinecone</code>, with a one-line change.</p>
+</section>
+
+<!-- ── Section 9 ── -->
+<section class="section" id="s9">
+  <div class="section-watermark">09</div>
+  <div class="section-eyebrow">Framework</div>
+  <h2>RetrievalQA Chain</h2>
+
+  <p><code>RetrievalQA</code> is a LangChain chain that combines a <em>retriever</em> (finds relevant chunks) with a <em>language model</em> (generates an answer). It's the central piece that makes RAG work.</p>
+
+<pre><code>qa = RetrievalQA.from_chain_type(
+    llm=llm,              <span class="comment"># the Mistral model</span>
+    retriever=retriever,  <span class="comment"># ChromaDB similarity search</span>
+    return_source_documents=True  <span class="comment"># also return which chunks were used</span>
+)
+
+response = qa.invoke({"query": "What is the attention mechanism?"})
+answer  = response["result"]           <span class="comment"># the generated text</span>
+sources = response["source_documents"] <span class="comment"># list of retrieved Document objects</span></code></pre>
+
+  <h3>What happens inside <code>qa.invoke()</code></h3>
+  <ol>
+    <li>Your question is passed to the <strong>retriever</strong>, which embeds it and searches ChromaDB for the top-4 most similar chunks.</li>
+    <li>The chain formats a <strong>prompt</strong>: <em>"Use the following context to answer the question. Context: [chunk1] [chunk2] [chunk3] [chunk4]. Question: [your question]. Answer:"</em></li>
+    <li>This prompt is sent to <strong>Mistral</strong> via Ollama.</li>
+    <li>Mistral's generated response is returned as <code>result</code>. The retrieved chunks are returned as <code>source_documents</code>.</li>
+  </ol>
+
+  <div class="info-box">
+    <div class="info-label">chain_type</div>
+    <code>from_chain_type</code> defaults to <code>chain_type="stuff"</code> — all retrieved chunks are "stuffed" into a single prompt. Alternative types like <code>map_reduce</code> (process each chunk separately, then combine) exist for longer documents that exceed the model's context window.
+  </div>
+
+  <h3>Source documents in your app</h3>
+  <p>The <code>source_documents</code> list is what your app uses to show the "Sources — N page(s)" expander. Each element is a LangChain <code>Document</code> with <code>.metadata["page"]</code> giving the original PDF page number.</p>
+</section>
+
+<!-- ── Section 10 ── -->
+<section class="section" id="s10">
+  <div class="section-watermark">10</div>
+  <div class="section-eyebrow">User Interface</div>
+  <h2>Streamlit</h2>
+
+  <p>Streamlit is a Python library that turns a Python script into an interactive web app. Every time a user interacts (clicks a button, types in the chat, uploads a file), Streamlit <strong>reruns the entire script from top to bottom</strong>. This is the most important thing to understand about Streamlit.</p>
+
+  <div class="analogy">
+    <div class="analogy-label">Analogy</div>
+    A Streamlit app is like a spreadsheet: when you change one cell, everything recalculates. When you interact with any widget, Streamlit recalculates — re-executes — the entire app. State is managed explicitly, not implicitly.
+  </div>
+
+  <h3>Key Streamlit concepts used in your app</h3>
+  <table class="param-table">
+    <thead><tr><th>API</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>st.chat_input()</td><td>A fixed-at-bottom text input that triggers a rerun when submitted. Returns the typed text or <code>None</code>.</td></tr>
+      <tr><td>st.chat_message(role)</td><td>A styled container for one message. <code>role="user"</code> or <code>role="assistant"</code> controls the avatar and layout.</td></tr>
+      <tr><td>st.sidebar</td><td>A context manager that routes any widget inside it to the left sidebar panel.</td></tr>
+      <tr><td>st.file_uploader()</td><td>A drag-and-drop file widget. Returns an <code>UploadedFile</code> object (bytes + filename) or <code>None</code>.</td></tr>
+      <tr><td>st.spinner()</td><td>A "loading" context manager — shows a spinner while the code block inside runs.</td></tr>
+      <tr><td>st.expander()</td><td>A collapsible section — used for the Sources panel.</td></tr>
+      <tr><td>st.rerun()</td><td>Force an immediate full re-run of the script. Used after clearing chat history.</td></tr>
+      <tr><td>st.session_state</td><td>A dictionary that persists between reruns. The only way to store state across interactions.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Why session_state matters</h3>
+  <p>Without <code>st.session_state</code>, every rerun would forget everything — chat history, the QA chain, which PDF was loaded. Your app uses three session state keys:</p>
+<pre><code>st.session_state.messages  <span class="comment"># list of {role, content, sources} dicts</span>
+st.session_state.qa        <span class="comment"># the built RetrievalQA chain (expensive to rebuild)</span>
+st.session_state.pdf_name  <span class="comment"># filename of the last uploaded PDF</span></code></pre>
+</section>
+
+<!-- ── Section 11 ── -->
+<section class="section" id="s11">
+  <div class="section-watermark">11</div>
+  <div class="section-eyebrow">Engineering</div>
+  <h2>Performance Patterns</h2>
+
+  <p>The app uses three specific Python/Streamlit patterns to stay fast. Understanding them helps you extend the project without accidentally re-introducing slowness.</p>
+
+  <h3>Pattern 1 — Lazy imports</h3>
+  <p>Heavy packages (<code>torch</code>, <code>langchain_community</code>, <code>chromadb</code>) take 10–40 seconds to import on first load. By moving these imports <em>inside</em> the functions that need them, the page loads instantly. Python's module cache (<code>sys.modules</code>) ensures each package is only imported once, regardless of how many times the function is called.</p>
+<pre><code><span class="comment"># Bad — runs on every page load (20+ seconds)</span>
+<span class="kw">from</span> langchain_community.vectorstores <span class="kw">import</span> Chroma  <span class="comment"># at top of file</span>
+
+<span class="comment"># Good — runs only when process_pdf() is first called</span>
+<span class="kw">def</span> process_pdf(path):
+    <span class="kw">from</span> langchain_community.vectorstores <span class="kw">import</span> Chroma  <span class="comment"># inside function</span>
+    ...</code></pre>
+
+  <h3>Pattern 2 — @st.cache_resource</h3>
+  <p>This decorator tells Streamlit to run a function <em>once</em> and cache the result in memory. Subsequent calls return the cached result instantly. It is specifically designed for expensive-to-build, stateful objects like ML models and database connections.</p>
+<pre><code>@st.cache_resource(show_spinner=<span class="kw">False</span>)
+<span class="kw">def</span> _load_embedding_model():
+    <span class="kw">from</span> langchain_community.embeddings <span class="kw">import</span> HuggingFaceEmbeddings
+    <span class="kw">return</span> HuggingFaceEmbeddings(model_name=<span class="kw">"all-MiniLM-L6-v2"</span>)
+
+<span class="comment"># First call: loads model from disk (~5s)
+# Every subsequent call: returns immediately from cache</span></code></pre>
+
+  <div class="info-box">
+    <div class="info-label">cache_resource vs cache_data</div>
+    <code>@st.cache_resource</code> caches stateful objects (models, DB connections) — shared across all users and sessions. <code>@st.cache_data</code> caches pure functions (serialisable outputs like dataframes, JSON) — isolated per user. Use <code>cache_resource</code> for anything that holds a connection or loaded weights.
+  </div>
+
+  <h3>Pattern 3 — Session state for the QA chain</h3>
+  <p>The QA chain (<code>st.session_state.qa</code>) is rebuilt only when a <em>new</em> PDF is uploaded, detected by comparing filenames:</p>
+<pre><code><span class="kw">if</span> st.session_state.pdf_name != uploaded_file.name:
+    <span class="comment"># New PDF — rebuild the chain</span>
+    st.session_state.qa = process_pdf(<span class="kw">"temp.pdf"</span>)
+    st.session_state.pdf_name = uploaded_file.name
+<span class="comment"># Same PDF — chain is already in session_state, skip processing</span></code></pre>
+  <p>Without this guard, every chat message would trigger PDF reprocessing (30+ seconds per question).</p>
+</section>
+
+<!-- ── Section 12 ── -->
+<section class="section" id="s12">
+  <div class="section-watermark">12</div>
+  <div class="section-eyebrow">Reference</div>
+  <h2>Glossary</h2>
+
+  <div class="gloss-grid">
+    <div class="gloss-item">
+      <div class="gloss-term">RAG</div>
+      <div class="gloss-def">Retrieval-Augmented Generation. A technique where relevant documents are fetched first, then fed to an LLM as context for generating an answer.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Embedding</div>
+      <div class="gloss-def">A fixed-length list of numbers (a vector) that represents text meaning. Produced by a neural network trained on semantic similarity.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Vector Database</div>
+      <div class="gloss-def">A database optimised for storing and similarity-searching vectors. ChromaDB is the one used here, persisted locally in the <code>./db</code> folder.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Cosine Similarity</div>
+      <div class="gloss-def">A measure of similarity between two vectors based on the angle between them. A score of 1.0 = identical direction; 0.0 = orthogonal (unrelated).</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Chunk</div>
+      <div class="gloss-def">A small piece of text, typically 300–600 characters, produced by splitting a larger document. Each chunk is embedded and stored as one entry in ChromaDB.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">LLM</div>
+      <div class="gloss-def">Large Language Model. A neural network trained on vast text data that can generate human-like text. Mistral 7B is the LLM in this project.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Ollama</div>
+      <div class="gloss-def">A tool for running LLMs locally. Serves models via an HTTP API at <code>localhost:11434</code>. Handles GPU/CPU memory management.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Context Window</div>
+      <div class="gloss-def">The maximum number of tokens an LLM can process at once. Mistral's is 32,768 tokens (~24,000 words). RAG ensures we stay well within this.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Token</div>
+      <div class="gloss-def">The unit LLMs process text in — roughly ¾ of a word. "hamburger" is 3 tokens. Pricing and context limits are measured in tokens, not words.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Retriever</div>
+      <div class="gloss-def">A LangChain interface that wraps a vector store and implements <code>get_relevant_documents(query)</code>. By default returns the top-4 most similar chunks.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">chain_type="stuff"</div>
+      <div class="gloss-def">All retrieved documents are "stuffed" into a single prompt. Simple and fast. Alternatives: <code>map_reduce</code>, <code>refine</code>, <code>map_rerank</code>.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Session State</div>
+      <div class="gloss-def">Streamlit's mechanism for persisting data across reruns. Stored in <code>st.session_state</code> as a dictionary. Lost when the browser tab closes.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">HNSW</div>
+      <div class="gloss-def">Hierarchical Navigable Small World — the graph algorithm ChromaDB uses to find nearest-neighbour vectors in sub-linear time.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">all-MiniLM-L6-v2</div>
+      <div class="gloss-def">A 23 MB sentence-transformer model from HuggingFace. Outputs 384-dimensional vectors. "L6" = 6 transformer layers. Fast, accurate, CPU-friendly.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Persistent Client</div>
+      <div class="gloss-def">ChromaDB's mode where data is saved to disk (the <code>./db</code> folder). Auto-persists on every write — no need to call <code>.persist()</code> manually.</div>
+    </div>
+    <div class="gloss-item">
+      <div class="gloss-term">Lazy Import</div>
+      <div class="gloss-def">Moving a heavy <code>import</code> statement inside a function rather than at the top of the file, so the module only loads when that function is first called.</div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- Footer -->
+<div class="guide-footer">
+  <span>DocChat RAG Project — Concepts Guide</span>
+  <span>Python 3.12 · LangChain 0.1 · ChromaDB 1.5 · Streamlit 1.55</span>
+</div>

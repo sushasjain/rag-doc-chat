@@ -1,373 +1,335 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import json
+import html as html_lib
+import markdown as mdlib
 import warnings
 warnings.filterwarnings("ignore")
 
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
-from langchain.chains import RetrievalQA
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
+# ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="DocChat",
-    page_icon="📚",
+    page_icon="✦",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 CHAT_FILE = "chat_history.json"
 
-# ─── CUSTOM CSS ───────────────────────────────────────────────────────────────
+# ─── FORCE SIDEBAR OPEN via parent-frame JS ───────────────────────────────────
+# components.html runs in an iframe on localhost — same origin as the app,
+# so window.parent.document gives us access to the Streamlit page DOM.
+components.html("""
+<script>
+(function() {
+  var attempts = 0;
+  function fix() {
+    try {
+      var doc = window.parent.document;
+
+      // Force sidebar visible
+      var sb = doc.querySelector('section[data-testid="stSidebar"]');
+      if (sb) {
+        sb.style.cssText += ';transform:translateX(0)!important;' +
+          'min-width:260px!important;width:260px!important;' +
+          'visibility:visible!important;display:flex!important;';
+      }
+
+      // Push main content to the right of the sidebar
+      var main = doc.querySelector('[data-testid="stMain"]');
+      if (main) main.style.marginLeft = '260px';
+
+    } catch(e) {}
+    attempts++;
+    if (attempts < 15) setTimeout(fix, 300);
+  }
+  fix();
+})();
+</script>
+""", height=0)
+
+# ─── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Global ── */
 *, *::before, *::after { box-sizing: border-box; }
 
-.stApp {
-    background-color: #0d1117;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+/* ── Force dark theme variables ── */
+:root {
+  color-scheme: dark;
+  --bg:        #1a1a1a;
+  --surface:   #242424;
+  --border:    #2c2c2c;
+  --text:      #e2e2e2;
+  --muted:     #666;
+  --accent:    #d97757;
+  --accent-bg: rgba(217,119,87,.08);
+  --code-bg:   #141414;
 }
 
-/* Hide Streamlit chrome */
-header[data-testid="stHeader"]    { display: none !important; }
-footer                             { display: none !important; }
-#MainMenu                          { display: none !important; }
-
-/* Lock sidebar permanently open — hide every variant of the collapse/expand arrow */
-[data-testid="stSidebarCollapseButton"]          { display: none !important; }
-[data-testid="collapsedControl"]                  { display: none !important; }
-button[data-testid="stBaseButton-headerNoPadding"]{ display: none !important; }
-button[kind="header"]                             { display: none !important; }
-
-/* ── Main content area ── */
-.main .block-container {
-    padding-top: 2rem !important;
-    padding-bottom: 7rem !important;
-    max-width: 780px !important;
-    margin: 0 auto !important;
+html, body,
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+section[data-testid="stMain"],
+.main {
+  background-color: #1a1a1a !important;
+  color: #e2e2e2 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
+
+/* ── Hide Streamlit chrome ── */
+header[data-testid="stHeader"] { display: none !important; }
+footer                          { display: none !important; }
+#MainMenu                       { display: none !important; }
 
 /* ── Sidebar ── */
-[data-testid="stSidebar"] {
-    background-color: #161b22 !important;
-    border-right: 1px solid #21262d !important;
+section[data-testid="stSidebar"] {
+  background-color: #171717 !important;
+  border-right: 1px solid #252525 !important;
+  min-width: 260px !important;
+  width: 260px !important;
+  transform: translateX(0) !important;
+  visibility: visible !important;
 }
 
 [data-testid="stSidebarContent"] {
-    padding: 1.5rem 1.25rem 2rem 1.25rem !important;
+  padding: 1rem 0.875rem 1.5rem !important;
 }
 
-/* Sidebar header */
-.sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding-bottom: 1.25rem;
+/* Sidebar collapse button — keep visible but match dark theme */
+[data-testid="stSidebarCollapseButton"] button,
+button[data-testid="stBaseButton-headerNoPadding"],
+[data-testid="collapsedControl"] button {
+  background: transparent !important;
+  border: none !important;
+  color: #444 !important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="collapsedControl"] button:hover {
+  color: #888 !important;
+  background: #242424 !important;
 }
 
-.sidebar-logo {
-    font-size: 1.4rem;
-    line-height: 1;
+/* ── Main content ── */
+.main .block-container {
+  padding-top: 1.25rem !important;
+  padding-bottom: 7rem !important;
+  max-width: 740px !important;
+  margin: 0 auto !important;
 }
 
-.sidebar-title {
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: #e6edf3;
-    letter-spacing: -0.02em;
+/* ── Sidebar HTML components ── */
+.sb-brand {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem .25rem 1rem;
 }
-
-.sidebar-divider {
-    height: 1px;
-    background: #21262d;
-    margin: 1rem 0;
+.sb-icon {
+  width: 30px; height: 30px; background: #d97757;
+  border-radius: 7px; display: flex; align-items: center;
+  justify-content: center; font-size: .9rem; color: white;
+  font-weight: 700; flex-shrink: 0;
 }
-
-.sidebar-section-label {
-    font-size: 0.62rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.09em !important;
-    color: #6e7681 !important;
-    margin: 0 0 0.65rem 0 !important;
-    text-transform: uppercase !important;
+.sb-name { font-size: 1rem; font-weight: 600; color: #ececec; letter-spacing: -.01em; }
+.sb-div  { height: 1px; background: #252525; margin: .5rem 0; }
+.sb-label {
+  font-size: .65rem !important; font-weight: 600 !important;
+  color: #444 !important; margin: .75rem 0 .4rem .1rem !important;
+  letter-spacing: .08em !important; text-transform: uppercase !important;
 }
-
-/* PDF status badge */
-.pdf-badge {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: rgba(124, 58, 237, 0.08);
-    border: 1px solid rgba(124, 58, 237, 0.25);
-    border-radius: 8px;
-    padding: 0.5rem 0.75rem;
-    margin-top: 0.6rem;
-    font-size: 0.78rem;
-    color: #c9d1d9;
+.pdf-active {
+  display: flex; align-items: center; gap: .45rem;
+  background: rgba(217,119,87,.07); border: 1px solid rgba(217,119,87,.18);
+  border-radius: 8px; padding: .45rem .7rem; margin-top: .5rem;
+  font-size: .75rem; color: #aaa;
 }
-
-.pdf-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.pdf-ready {
-    color: #7c3aed;
-    font-weight: 700;
-    flex-shrink: 0;
-}
-
-/* Model status panel */
-.model-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    margin-top: 0.1rem;
-}
-
-.model-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    color: #8b949e;
-}
-
-.status-dot {
-    width: 6px;
-    height: 6px;
-    background: #3fb950;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
+.pdf-fname { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pdf-ok    { color:#d97757; font-weight:700; flex-shrink:0; }
+.model-info { display:flex; flex-direction:column; gap:.35rem; }
+.model-line { display:flex; align-items:center; gap:.45rem; font-size:.71rem; color:#444; }
+.m-dot      { width:5px; height:5px; background:#4caf50; border-radius:50%; flex-shrink:0; }
 
 /* ── Sidebar buttons ── */
 .stButton > button {
-    background: #21262d !important;
-    color: #c9d1d9 !important;
-    border: 1px solid #30363d !important;
-    border-radius: 8px !important;
-    font-size: 0.83rem !important;
-    font-weight: 500 !important;
-    padding: 0.45rem 1rem !important;
-    width: 100% !important;
-    text-align: left !important;
-    transition: background 0.12s ease, border-color 0.12s ease !important;
-    cursor: pointer !important;
+  background: transparent !important; color: #aaa !important;
+  border: 1px solid #2a2a2a !important; border-radius: 8px !important;
+  font-size: .82rem !important; font-weight: 400 !important;
+  padding: .5rem .875rem !important; width: 100% !important;
+  text-align: left !important; cursor: pointer !important;
+  transition: background .1s, border-color .1s, color .1s !important;
 }
-
 .stButton > button:hover {
-    background: #30363d !important;
-    border-color: #6e7681 !important;
-    color: #e6edf3 !important;
+  background: #242424 !important; border-color: #3a3a3a !important; color: #ececec !important;
 }
 
 /* ── File uploader ── */
-[data-testid="stFileUploader"] {
-    border-radius: 8px;
-}
-
 [data-testid="stFileUploadDropzone"] {
-    background: #21262d !important;
-    border: 1px dashed #30363d !important;
-    border-radius: 8px !important;
-    padding: 0.75rem !important;
+  background: #222 !important; border: 1px dashed #2c2c2c !important;
+  border-radius: 8px !important;
 }
-
-[data-testid="stFileUploadDropzone"]:hover {
-    border-color: #7c3aed !important;
-}
-
+[data-testid="stFileUploadDropzone"]:hover { border-color: #d97757 !important; }
 [data-testid="stFileUploadDropzone"] p,
-[data-testid="stFileUploadDropzone"] span {
-    font-size: 0.78rem !important;
-    color: #8b949e !important;
+[data-testid="stFileUploadDropzone"] span { font-size: .74rem !important; color: #4a4a4a !important; }
+
+/* ── Custom message bubbles ── */
+.cu-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 4px;
+  margin: 2px 0;
 }
 
-/* ── Chat messages ── */
-[data-testid="stChatMessage"] {
-    border-radius: 12px;
-    padding: 0.75rem 1rem;
-    margin: 0.4rem 0;
-    border: 1px solid transparent;
+/* USER — right aligned */
+.cu-user {
+  flex-direction: row-reverse;
+  align-items: flex-end;
+  margin: 8px 0;
+}
+.cu-bubble {
+  background: #242424;
+  border: 1px solid #2c2c2c;
+  border-radius: 18px 18px 4px 18px;
+  padding: 10px 16px;
+  max-width: 72%;
+  font-size: .9rem;
+  color: #e2e2e2;
+  line-height: 1.65;
+  word-wrap: break-word;
 }
 
-/* User bubble */
-[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
-    background: rgba(37, 99, 235, 0.07);
-    border-color: rgba(37, 99, 235, 0.18);
+/* ASSISTANT — left, no bubble */
+.cu-assistant {
+  padding: 14px 4px;
+}
+.cu-body { flex: 1; min-width: 0; padding-top: 2px; }
+.cu-content {
+  font-size: .9rem;
+  color: #e2e2e2;
+  line-height: 1.72;
+}
+.cu-content p         { margin: 0 0 .7em; }
+.cu-content p:last-child { margin-bottom: 0; }
+.cu-content ul, .cu-content ol { padding-left: 1.3rem; margin: .4em 0 .7em; }
+.cu-content li        { margin-bottom: .25em; }
+.cu-content h1, .cu-content h2, .cu-content h3 {
+  color: #ececec; font-weight: 600; margin: .8em 0 .3em; line-height: 1.3;
+}
+.cu-content h1 { font-size: 1.1rem; }
+.cu-content h2 { font-size: 1rem; }
+.cu-content h3 { font-size: .93rem; }
+.cu-content code {
+  font-family: 'Courier New', monospace; font-size: .82em;
+  background: #1e1e1e; padding: .1em .35em; border-radius: 3px; color: #d4d4d4;
+}
+.cu-content pre {
+  background: #141414; border: 1px solid #2c2c2c; border-radius: 6px;
+  padding: .875rem 1rem; overflow-x: auto; margin: .6em 0;
+}
+.cu-content pre code { background: none; padding: 0; font-size: .82rem; }
+.cu-content table { border-collapse: collapse; width: 100%; margin: .6em 0; font-size: .85rem; }
+.cu-content th, .cu-content td {
+  border: 1px solid #2c2c2c; padding: .4rem .7rem; text-align: left;
+}
+.cu-content th { background: #242424; color: #ececec; font-weight: 600; }
+.cu-content blockquote {
+  border-left: 3px solid #d97757; margin: .6em 0; padding: .3em .8em;
+  color: #888; font-style: italic;
+}
+.cu-content strong { color: #ececec; }
+
+/* Sources details */
+.cu-sources {
+  margin-top: .6rem;
+  font-size: .76rem;
+  color: #555;
+}
+.cu-sources summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .25rem 0;
+  user-select: none;
+}
+.cu-sources summary:hover { color: #888; }
+.cu-sources[open] summary { color: #888; }
+.cu-pages { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.4rem; padding-left:.1rem; }
+.cu-page  {
+  background: #1e1e1e; border: 1px solid #2c2c2c;
+  border-radius: 4px; padding: .15rem .5rem; font-size: .72rem; color: #666;
 }
 
-/* Assistant bubble */
-[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
-    background: rgba(22, 27, 34, 0.7);
-    border-color: #21262d;
+/* Avatars */
+.cu-av {
+  width: 28px; height: 28px; border-radius: 50%;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+}
+.cu-av-u  { background: #2e2e2e; color: #777; }
+.cu-av-ai {
+  background: #d97757; border-radius: 6px;
+  color: white; font-weight: 700; font-size: .88rem; letter-spacing: -.5px;
 }
 
-/* Avatar circles */
-[data-testid="chatAvatarIcon-user"] svg {
-    fill: #60a5fa !important;
-}
-
-[data-testid="chatAvatarIcon-assistant"] svg {
-    fill: #a78bfa !important;
-}
-
-/* Message text */
-[data-testid="stChatMessageContent"] p {
-    color: #e6edf3 !important;
-    font-size: 0.9rem !important;
-    line-height: 1.65 !important;
-    margin: 0 !important;
-}
-
-[data-testid="stChatMessageContent"] pre,
-[data-testid="stChatMessageContent"] code {
-    background: #21262d !important;
-    border: 1px solid #30363d !important;
-    border-radius: 6px !important;
-    font-size: 0.82rem !important;
-    color: #e6edf3 !important;
+/* Warning inside assistant block */
+.cu-warn {
+  background: rgba(217,119,87,.07); border: 1px solid rgba(217,119,87,.2);
+  border-radius: 8px; padding: .6rem .875rem; font-size: .84rem; color: #aaa;
+  margin-top: .25rem;
 }
 
 /* ── Chat input ── */
 [data-testid="stChatInputContainer"] {
-    background: #0d1117 !important;
-    border-top: 1px solid #21262d !important;
-    padding: 0.85rem 1.5rem 1rem 1.5rem !important;
+  background: #1a1a1a !important;
+  border-top: 1px solid #252525 !important;
+  padding: .875rem 2rem 1.25rem !important;
 }
-
 [data-testid="stChatInput"] {
-    background: #21262d !important;
-    border: 1px solid #30363d !important;
-    border-radius: 12px !important;
-    color: #e6edf3 !important;
-    font-size: 0.9rem !important;
+  background: #242424 !important; border: 1px solid #2c2c2c !important;
+  border-radius: 14px !important; color: #ececec !important; font-size: .9rem !important;
 }
-
 [data-testid="stChatInput"]:focus-within {
-    border-color: #7c3aed !important;
-    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12) !important;
-}
-
-/* ── Sources expander ── */
-[data-testid="stExpander"] {
-    background: rgba(13, 17, 23, 0.6) !important;
-    border: 1px solid #21262d !important;
-    border-radius: 8px !important;
-    margin-top: 0.5rem !important;
-}
-
-[data-testid="stExpander"] details summary {
-    color: #8b949e !important;
-    font-size: 0.78rem !important;
-    padding: 0.4rem 0.25rem !important;
-}
-
-[data-testid="stExpander"] details summary:hover {
-    color: #c9d1d9 !important;
-}
-
-[data-testid="stExpander"] [data-testid="stExpanderDetails"] p {
-    color: #8b949e !important;
-    font-size: 0.8rem !important;
-    line-height: 1.5 !important;
+  border-color: #d97757 !important;
+  box-shadow: 0 0 0 2px rgba(217,119,87,.12) !important;
 }
 
 /* ── Spinner ── */
-.stSpinner > div > div {
-    border-top-color: #7c3aed !important;
-}
+.stSpinner > div > div { border-top-color: #d97757 !important; }
 
-/* ── Alerts ── */
-[data-testid="stAlert"] {
-    background: rgba(22, 27, 34, 0.8) !important;
-    border: 1px solid #30363d !important;
-    border-radius: 8px !important;
+/* ── Welcome ── */
+.cu-welcome {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 5rem 2rem 3rem; max-width: 440px; margin: 0 auto;
 }
-
-/* ── Welcome screen ── */
-.welcome-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 5rem 2rem 3rem;
-    max-width: 460px;
-    margin: 0 auto;
+.cu-welcome-icon {
+  width: 52px; height: 52px; background: #d97757; border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; color: white; font-weight: 700; margin: 0 auto 1.25rem;
 }
-
-.welcome-glyph {
-    font-size: 2.75rem;
-    margin-bottom: 1rem;
-    line-height: 1;
+.cu-welcome h2 {
+  font-size: 1.4rem; font-weight: 600; color: #ececec;
+  margin: 0 0 .5rem; letter-spacing: -.02em;
 }
-
-.welcome-title {
-    font-size: 1.45rem;
-    font-weight: 600;
-    color: #e6edf3;
-    margin: 0 0 0.5rem 0;
-    letter-spacing: -0.02em;
+.cu-welcome p { color: #4a4a4a; font-size: .875rem; line-height: 1.6; margin: 0 0 2rem; }
+.cu-steps { display:flex; gap:1.5rem; justify-content:center; flex-wrap:wrap; }
+.cu-step  { display:flex; flex-direction:column; align-items:center; gap:.35rem; }
+.cu-step-n {
+  width:32px; height:32px; border-radius:50%; border:1px solid #2c2c2c;
+  color:#555; display:flex; align-items:center; justify-content:center; font-size:.8rem;
 }
+.cu-step-l { color:#444; font-size:.72rem; }
 
-.welcome-sub {
-    color: #8b949e;
-    font-size: 0.875rem;
-    line-height: 1.55;
-    margin: 0 0 2rem 0;
-}
-
-.steps-row {
-    display: flex;
-    gap: 1.25rem;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.step-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.4rem;
-}
-
-.step-num {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: rgba(124, 58, 237, 0.12);
-    border: 1px solid rgba(124, 58, 237, 0.3);
-    color: #a78bfa;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 0.8rem;
-}
-
-.step-label {
-    color: #6e7681;
-    font-size: 0.75rem;
-    white-space: nowrap;
-}
-
-/* ── Thin scrollbar ── */
+/* ── Scrollbar ── */
 ::-webkit-scrollbar       { width: 4px; }
-::-webkit-scrollbar-track { background: #0d1117; }
-::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #6e7681; }
+::-webkit-scrollbar-track { background: #1a1a1a; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── SESSION STATE INIT ───────────────────────────────────────────────────────
+# ─── SESSION STATE ────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
     if os.path.exists(CHAT_FILE):
         with open(CHAT_FILE, "r") as f:
@@ -375,196 +337,198 @@ if "messages" not in st.session_state:
     else:
         st.session_state.messages = []
 
-if "qa" not in st.session_state:
-    st.session_state.qa = None
-
-if "pdf_name" not in st.session_state:
-    st.session_state.pdf_name = None
+if "qa"       not in st.session_state: st.session_state.qa       = None
+if "pdf_name" not in st.session_state: st.session_state.pdf_name = None
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 def save_chat():
     with open(CHAT_FILE, "w") as f:
         json.dump(st.session_state.messages, f)
 
+@st.cache_resource(show_spinner=False)
+def _load_embedding_model():
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+@st.cache_resource(show_spinner=False)
+def _load_llm():
+    from langchain_community.llms import Ollama
+    return Ollama(model="mistral")
+
 def process_pdf(file_path: str):
-    """Unchanged RAG pipeline — loads, chunks, embeds, and wires up RetrievalQA."""
-    loader = PyPDFLoader(file_path)
-    docs = loader.load()
-
+    import shutil
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from langchain_community.vectorstores import Chroma
+    from langchain.chains import RetrievalQA
+    # Wipe old vector store so the new PDF starts from a clean index
+    shutil.rmtree("db", ignore_errors=True)
+    loader  = PyPDFLoader(file_path)
+    docs    = loader.load()
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    docs = splitter.split_documents(docs)
-
-    embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
+    docs    = splitter.split_documents(docs)
     vectordb = Chroma.from_documents(
-        documents=docs,
-        embedding=embedding,
-        persist_directory="db",
+        documents=docs, embedding=_load_embedding_model(), persist_directory="db"
     )
-
-    retriever = vectordb.as_retriever()
-    llm = Ollama(model="mistral")
-
     return RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
+        llm=_load_llm(), retriever=vectordb.as_retriever(),
         return_source_documents=True,
     )
 
-# ─── SIDEBAR ─────────────────────────────────────────────────────────────────
-with st.sidebar:
-
-    # Branding
-    st.markdown("""
-    <div class="sidebar-header">
-        <span class="sidebar-logo">📚</span>
-        <span class="sidebar-title">DocChat</span>
+# ─── MESSAGE RENDERERS ───────────────────────────────────────────────────────
+def render_user(content: str):
+    safe = html_lib.escape(content)
+    st.markdown(f"""
+    <div class="cu-msg cu-user">
+      <div class="cu-bubble">{safe}</div>
+      <div class="cu-av cu-av-u">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── PDF Upload ──
-    st.markdown('<p class="sidebar-section-label">Document</p>', unsafe_allow_html=True)
+def render_assistant(content: str, sources: list = None):
+    body = mdlib.markdown(content, extensions=["fenced_code", "tables"])
+    src  = ""
+    if sources:
+        pages = "".join(f'<span class="cu-page">Page {p}</span>' for p in sources)
+        src   = (f'<details class="cu-sources">'
+                 f'<summary>📄 Sources &mdash; {len(sources)} page(s)</summary>'
+                 f'<div class="cu-pages">{pages}</div></details>')
+    st.markdown(f"""
+    <div class="cu-msg cu-assistant">
+      <div class="cu-av cu-av-ai">✦</div>
+      <div class="cu-body">
+        <div class="cu-content">{body}</div>
+        {src}
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    uploaded_file = st.file_uploader(
-        "Upload PDF",
-        type="pdf",
-        label_visibility="collapsed",
-    )
+def render_assistant_warn():
+    st.markdown("""
+    <div class="cu-msg cu-assistant">
+      <div class="cu-av cu-av-ai">✦</div>
+      <div class="cu-body">
+        <div class="cu-warn">Please upload a PDF from the sidebar first.</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ─── SIDEBAR ─────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("""
+    <div class="sb-brand">
+      <div class="sb-icon">✦</div>
+      <span class="sb-name">DocChat</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("✏  New conversation", key="new_chat", use_container_width=True):
+        st.session_state.messages = []
+        save_chat()
+        st.rerun()
+
+    st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
+    st.markdown('<p class="sb-label">Document</p>', unsafe_allow_html=True)
+
+    uploaded_file = st.file_uploader("Upload PDF", type="pdf", label_visibility="collapsed")
 
     if uploaded_file:
-        # Only re-process if a different (or new) PDF is uploaded
         if st.session_state.pdf_name != uploaded_file.name:
-            with st.spinner("Processing PDF…"):
+            with st.spinner("Processing…"):
                 with open("temp.pdf", "wb") as f:
                     f.write(uploaded_file.read())
-                st.session_state.qa = process_pdf("temp.pdf")
+                st.session_state.qa       = process_pdf("temp.pdf")
                 st.session_state.pdf_name = uploaded_file.name
-
         st.markdown(f"""
-        <div class="pdf-badge">
-            <span>📄</span>
-            <span class="pdf-name">{uploaded_file.name}</span>
-            <span class="pdf-ready">✓</span>
+        <div class="pdf-active">
+          <span>📄</span>
+          <span class="pdf-fname">{uploaded_file.name}</span>
+          <span class="pdf-ok">✓</span>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
 
-    # ── Chat Controls ──
-    st.markdown('<p class="sidebar-section-label">Chat</p>', unsafe_allow_html=True)
-
-    if st.button("✦  New Chat", key="new_chat", use_container_width=True):
+    if st.button("🗑  Clear history", key="clear_chat", use_container_width=True):
         st.session_state.messages = []
         save_chat()
         st.rerun()
 
-    if st.button("🗑  Clear History", key="clear_chat", use_container_width=True):
-        st.session_state.messages = []
-        save_chat()
-        st.rerun()
-
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
-
-    # ── Model Info ──
-    st.markdown('<p class="sidebar-section-label">Model</p>', unsafe_allow_html=True)
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
+    st.markdown('<p class="sb-label">Running locally</p>', unsafe_allow_html=True)
     st.markdown("""
-    <div class="model-panel">
-        <div class="model-row"><span class="status-dot"></span><span>mistral (Ollama)</span></div>
-        <div class="model-row"><span class="status-dot"></span><span>all-MiniLM-L6-v2</span></div>
-        <div class="model-row"><span class="status-dot"></span><span>ChromaDB</span></div>
+    <div class="model-info">
+      <div class="model-line"><span class="m-dot"></span><span>mistral · Ollama</span></div>
+      <div class="model-line"><span class="m-dot"></span><span>all-MiniLM-L6-v2</span></div>
+      <div class="model-line"><span class="m-dot"></span><span>ChromaDB</span></div>
     </div>
     """, unsafe_allow_html=True)
 
-# ─── MAIN CHAT AREA ──────────────────────────────────────────────────────────
-
-# Welcome / empty state
+# ─── MAIN AREA ────────────────────────────────────────────────────────────────
 if not st.session_state.messages:
     if st.session_state.qa is None:
         st.markdown("""
-        <div class="welcome-wrap">
-            <div class="welcome-glyph">📚</div>
-            <h2 class="welcome-title">Chat with your document</h2>
-            <p class="welcome-sub">Upload a PDF in the sidebar, then ask anything about it.</p>
-            <div class="steps-row">
-                <div class="step-card">
-                    <div class="step-num">1</div>
-                    <span class="step-label">Upload PDF</span>
-                </div>
-                <div class="step-card">
-                    <div class="step-num">2</div>
-                    <span class="step-label">Ask a question</span>
-                </div>
-                <div class="step-card">
-                    <div class="step-num">3</div>
-                    <span class="step-label">Get answers</span>
-                </div>
-            </div>
+        <div class="cu-welcome">
+          <div class="cu-welcome-icon">✦</div>
+          <h2>How can I help you?</h2>
+          <p>Upload a PDF from the sidebar, then ask me anything about it.</p>
+          <div class="cu-steps">
+            <div class="cu-step"><div class="cu-step-n">1</div><span class="cu-step-l">Upload PDF</span></div>
+            <div class="cu-step"><div class="cu-step-n">2</div><span class="cu-step-l">Ask a question</span></div>
+            <div class="cu-step"><div class="cu-step-n">3</div><span class="cu-step-l">Get answers</span></div>
+          </div>
         </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown(f"""
-        <div class="welcome-wrap">
-            <div class="welcome-glyph">💬</div>
-            <h2 class="welcome-title">Ready</h2>
-            <p class="welcome-sub">
-                <strong style="color:#a78bfa;">{st.session_state.pdf_name}</strong>
-                is loaded. Ask me anything about it.
-            </p>
+        <div class="cu-welcome">
+          <div class="cu-welcome-icon">✦</div>
+          <h2>Ready to chat</h2>
+          <p><span style="color:#d97757">{st.session_state.pdf_name}</span> is loaded.<br>Ask me anything about it.</p>
         </div>
         """, unsafe_allow_html=True)
 
 # Render chat history
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        if msg["role"] == "assistant" and msg.get("sources"):
-            sources = msg["sources"]
-            with st.expander(f"📄 Sources — {len(sources)} page(s)"):
-                for page in sources:
-                    st.markdown(f"- Page {page}")
+    if msg["role"] == "user":
+        render_user(msg["content"])
+    else:
+        if msg["content"] == "Please upload a PDF first.":
+            render_assistant_warn()
+        else:
+            render_assistant(msg["content"], msg.get("sources", []))
 
-# ─── CHAT INPUT ──────────────────────────────────────────────────────────────
-query = st.chat_input("Ask something about your PDF…")
+# ─── INPUT ───────────────────────────────────────────────────────────────────
+query = st.chat_input("Message DocChat…")
 
 if query:
-    # Append + save user message
     st.session_state.messages.append({"role": "user", "content": query})
     save_chat()
+    render_user(query)
 
-    with st.chat_message("user"):
-        st.markdown(query)
-
-    # Guard: no PDF uploaded yet
     if st.session_state.qa is None:
-        with st.chat_message("assistant"):
-            st.warning("Please upload a PDF in the sidebar first.")
+        render_assistant_warn()
         st.session_state.messages.append({
-            "role": "assistant",
-            "content": "Please upload a PDF first.",
-            "sources": [],
+            "role": "assistant", "content": "Please upload a PDF first.", "sources": [],
         })
         save_chat()
-
     else:
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking…"):
-                response = st.session_state.qa.invoke({"query": query})
-                answer = response["result"]
-                sources = sorted(set(
-                    str(doc.metadata.get("page", "?"))
-                    for doc in response["source_documents"]
-                ))
-
-            st.markdown(answer)
-
-            if sources:
-                with st.expander(f"📄 Sources — {len(sources)} page(s)"):
-                    for page in sources:
-                        st.markdown(f"- Page {page}")
-
+        with st.spinner("Thinking…"):
+            response = st.session_state.qa.invoke({"query": query})
+            answer   = response["result"]
+            sources  = sorted(set(
+                str(doc.metadata.get("page", "?"))
+                for doc in response["source_documents"]
+            ))
+        render_assistant(answer, sources)
         st.session_state.messages.append({
-            "role": "assistant",
-            "content": answer,
-            "sources": sources,
+            "role": "assistant", "content": answer, "sources": sources,
         })
         save_chat()
