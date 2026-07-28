@@ -26,3 +26,9 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Local test/reference files
+RAG_Concepts_Guide.pdf
+rag-guide.html
+data/
+installed_packages.txt
