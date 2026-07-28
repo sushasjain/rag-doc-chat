@@ -583,8 +583,7 @@ for msg in st.session_state.messages:
             render_assistant_warn()
         else:
             render_assistant(msg["content"], msg.get("sources", []))
-
-# ─── INPUT ───────────────────────────────────────────────────────────────────
+            
 # ─── INPUT ───────────────────────────────────────────────────────────────────
 query = st.chat_input("Message DocChat…")
 

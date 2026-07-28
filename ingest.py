@@ -7,11 +7,14 @@ loader = PyPDFLoader("data/sample.pdf")
 documents = loader.load()
 
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50
+    chunk_size=800,
+    chunk_overlap=150
 )
 
 docs = text_splitter.split_documents(documents)
+
+for i, doc in enumerate(docs):
+    doc.metadata["chunk_id"] = i
 
 embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
