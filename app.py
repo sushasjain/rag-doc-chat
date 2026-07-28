@@ -2,6 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import os
 import json
+import hashlib
 import html as html_lib
 import markdown as mdlib
 import warnings
@@ -256,10 +257,20 @@ button[data-testid="stBaseButton-headerNoPadding"],
 }
 .cu-sources summary:hover { color: #888; }
 .cu-sources[open] summary { color: #888; }
-.cu-pages { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.4rem; padding-left:.1rem; }
+.cu-pages { display:flex; flex-direction:column; gap:.5rem; margin-top:.5rem; }
+.cu-src-item {
+  display: flex; align-items: baseline; gap: .6rem;
+  background: #1e1e1e; border: 1px solid #252525;
+  border-radius: 6px; padding: .4rem .7rem;
+}
 .cu-page  {
-  background: #1e1e1e; border: 1px solid #2c2c2c;
-  border-radius: 4px; padding: .15rem .5rem; font-size: .72rem; color: #666;
+  font-size: .69rem; font-weight: 600; color: #d97757;
+  white-space: nowrap; flex-shrink: 0;
+}
+.cu-excerpt {
+  font-size: .72rem; color: #444; line-height: 1.4;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 
 /* Avatars */
@@ -339,6 +350,7 @@ if "messages" not in st.session_state:
 
 if "qa"       not in st.session_state: st.session_state.qa       = None
 if "pdf_name" not in st.session_state: st.session_state.pdf_name = None
+if "pdf_hash" not in st.session_state: st.session_state.pdf_hash = None
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 def save_chat():
@@ -348,32 +360,84 @@ def save_chat():
 @st.cache_resource(show_spinner=False)
 def _load_embedding_model():
     from langchain_community.embeddings import HuggingFaceEmbeddings
-    return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    return HuggingFaceEmbeddings(
+    model_name="BAAI/bge-small-en-v1.5",
+    encode_kwargs={"normalize_embeddings": True},
+)
 
 @st.cache_resource(show_spinner=False)
 def _load_llm():
     from langchain_community.llms import Ollama
     return Ollama(model="mistral")
 
+_PROMPT_TEMPLATE = """You are DocChat, a precise document assistant. Answer the user's question using ONLY the context provided below.
+
+Rules:
+- Use only information present in the context. Do not add outside knowledge.
+- If the answer is not in the context, respond exactly: "I couldn't find that information in this document."
+- Format your answer clearly: use bullet points for lists, **bold** for key terms, and short paragraphs.
+- Be direct. Do not repeat yourself. Do not pad your response.
+- Do not invent names, numbers, dates, or facts.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
 def process_pdf(file_path: str):
-    import shutil
     from langchain_community.document_loaders import PyPDFLoader
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_community.vectorstores import Chroma
     from langchain.chains import RetrievalQA
-    # Wipe old vector store so the new PDF starts from a clean index
-    shutil.rmtree("db", ignore_errors=True)
-    loader  = PyPDFLoader(file_path)
-    docs    = loader.load()
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    docs    = splitter.split_documents(docs)
+    from langchain_community.retrievers import BM25Retriever
+    from langchain.retrievers import EnsembleRetriever
+    from langchain.prompts import PromptTemplate
+
+    prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template=_PROMPT_TEMPLATE,
+    )
+
+    # Load PDF
+    loader = PyPDFLoader(file_path)
+    docs = loader.load()
+
+    # Chunk PDF
+    from chunker import split_documents_by_structure
+    docs = split_documents_by_structure(docs)
+
+    # Create Vector DB
     vectordb = Chroma.from_documents(
-        documents=docs, embedding=_load_embedding_model(), persist_directory="db"
+        documents=docs,
+        embedding=_load_embedding_model(),
     )
-    return RetrievalQA.from_chain_type(
-        llm=_load_llm(), retriever=vectordb.as_retriever(),
+
+    # Vector Retriever
+    vector_retriever = vectordb.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 5},
+    )
+
+    # BM25 Retriever
+    bm25_retriever = BM25Retriever.from_documents(docs)
+    bm25_retriever.k = 5
+
+    # Hybrid Retriever
+    retriever = EnsembleRetriever(
+        retrievers=[bm25_retriever, vector_retriever],
+        weights=[0.5, 0.5],
+    )
+
+    # QA Chain
+    qa = RetrievalQA.from_chain_type(
+        llm=_load_llm(),
+        retriever=retriever,
         return_source_documents=True,
+        chain_type_kwargs={"prompt": prompt},
     )
+
+    return qa
 
 # ─── MESSAGE RENDERERS ───────────────────────────────────────────────────────
 def render_user(content: str):
@@ -395,10 +459,22 @@ def render_assistant(content: str, sources: list = None):
     body = mdlib.markdown(content, extensions=["fenced_code", "tables"])
     src  = ""
     if sources:
-        pages = "".join(f'<span class="cu-page">Page {p}</span>' for p in sources)
-        src   = (f'<details class="cu-sources">'
-                 f'<summary>📄 Sources &mdash; {len(sources)} page(s)</summary>'
-                 f'<div class="cu-pages">{pages}</div></details>')
+        items = ""
+        for s in sources:
+            if isinstance(s, dict):
+                page    = html_lib.escape(str(s.get("page", "?")))
+                excerpt = html_lib.escape(s.get("excerpt", ""))
+                items  += (f'<div class="cu-src-item">'
+                           f'<span class="cu-page">pg {page}</span>'
+                           f'<span class="cu-excerpt">{excerpt}</span>'
+                           f'</div>')
+            else:
+                items += (f'<div class="cu-src-item">'
+                          f'<span class="cu-page">pg {html_lib.escape(str(s))}</span>'
+                          f'</div>')
+        src = (f'<details class="cu-sources">'
+               f'<summary>📄 {len(sources)} source section(s)</summary>'
+               f'<div class="cu-pages">{items}</div></details>')
     st.markdown(f"""
     <div class="cu-msg cu-assistant">
       <div class="cu-av cu-av-ai">✦</div>
@@ -439,12 +515,15 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Upload PDF", type="pdf", label_visibility="collapsed")
 
     if uploaded_file:
-        if st.session_state.pdf_name != uploaded_file.name:
+        file_bytes = uploaded_file.read()
+        file_hash  = hashlib.md5(file_bytes).hexdigest()
+        if st.session_state.pdf_hash != file_hash:
             with st.spinner("Processing…"):
                 with open("temp.pdf", "wb") as f:
-                    f.write(uploaded_file.read())
+                    f.write(file_bytes)
                 st.session_state.qa       = process_pdf("temp.pdf")
                 st.session_state.pdf_name = uploaded_file.name
+                st.session_state.pdf_hash = file_hash
         st.markdown(f"""
         <div class="pdf-active">
           <span>📄</span>
@@ -506,6 +585,7 @@ for msg in st.session_state.messages:
             render_assistant(msg["content"], msg.get("sources", []))
 
 # ─── INPUT ───────────────────────────────────────────────────────────────────
+# ─── INPUT ───────────────────────────────────────────────────────────────────
 query = st.chat_input("Message DocChat…")
 
 if query:
@@ -516,19 +596,59 @@ if query:
     if st.session_state.qa is None:
         render_assistant_warn()
         st.session_state.messages.append({
-            "role": "assistant", "content": "Please upload a PDF first.", "sources": [],
+            "role": "assistant",
+            "content": "Please upload a PDF first.",
+            "sources": [],
         })
         save_chat()
+
     else:
-        with st.spinner("Thinking…"):
-            response = st.session_state.qa.invoke({"query": query})
-            answer   = response["result"]
-            sources  = sorted(set(
-                str(doc.metadata.get("page", "?"))
-                for doc in response["source_documents"]
-            ))
+        answer = ""
+        sources = []
+
+        try:
+            with st.status("Searching document…", expanded=False) as status:
+                qa = st.session_state.qa
+
+                source_docs = qa.retriever.get_relevant_documents(query)
+
+                status.update(label="Generating answer...")
+
+                result = qa.combine_documents_chain.invoke({
+                    "input_documents": source_docs,
+                    "question": query,
+                })
+
+                answer = result.get("output_text", "").strip()
+
+                # Build deduplicated source list
+                seen = set()
+                for doc in source_docs:
+                    page = str(doc.metadata.get("page", "?"))
+                    if page not in seen:
+                        seen.add(page)
+                        sources.append({
+                            "page": page,
+                            "excerpt": doc.page_content[:150].strip().replace("\n", " "),
+                        })
+
+                sources.sort(key=lambda x: x["page"])
+
+                status.update(label="Done", state="complete")
+
+        except Exception:
+            answer = (
+                "Something went wrong while generating the answer. "
+                "Please make sure Ollama is running (`ollama serve`) and try again."
+            )
+            sources = []
+
         render_assistant(answer, sources)
+
         st.session_state.messages.append({
-            "role": "assistant", "content": answer, "sources": sources,
+            "role": "assistant",
+            "content": answer,
+            "sources": sources,
         })
+
         save_chat()
