@@ -3,9 +3,17 @@ import streamlit.components.v1 as components
 import os
 import json
 import hashlib
+import pickle
 import html as html_lib
 import markdown as mdlib
 import warnings
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
+
+load_dotenv() 
+
+
 warnings.filterwarnings("ignore")
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -147,8 +155,14 @@ button[data-testid="stBaseButton-headerNoPadding"],
 }
 .pdf-fname { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pdf-ok    { color:#d97757; font-weight:700; flex-shrink:0; }
-.model-info { display:flex; flex-direction:column; gap:.35rem; }
-.model-line { display:flex; align-items:center; gap:.45rem; font-size:.71rem; color:#444; }
+.model-info { display:flex; flex-direction:column; gap:.4rem; }
+.model-line { display:flex; align-items:center; gap:.5rem; font-size:.74rem; color:#bbb; }
+.model-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.model-tag  {
+  font-size:.62rem; font-weight:700; color:#888; background:#242424;
+  border:1px solid #2c2c2c; border-radius:4px; padding:.1rem .35rem;
+  flex-shrink:0; text-transform:uppercase; letter-spacing:.02em;
+}
 .m-dot      { width:5px; height:5px; background:#4caf50; border-radius:50%; flex-shrink:0; }
 
 /* ── Sidebar buttons ── */
@@ -244,7 +258,7 @@ button[data-testid="stBaseButton-headerNoPadding"],
 .cu-sources {
   margin-top: .6rem;
   font-size: .76rem;
-  color: #555;
+  color: #999;
 }
 .cu-sources summary {
   cursor: pointer;
@@ -255,20 +269,24 @@ button[data-testid="stBaseButton-headerNoPadding"],
   padding: .25rem 0;
   user-select: none;
 }
-.cu-sources summary:hover { color: #888; }
-.cu-sources[open] summary { color: #888; }
+.cu-sources summary:hover { color: #ccc; }
+.cu-sources[open] summary { color: #ccc; }
 .cu-pages { display:flex; flex-direction:column; gap:.5rem; margin-top:.5rem; }
 .cu-src-item {
-  display: flex; align-items: baseline; gap: .6rem;
-  background: #1e1e1e; border: 1px solid #252525;
-  border-radius: 6px; padding: .4rem .7rem;
+  display: flex; align-items: flex-start; gap: .6rem;
+  background: #1e1e1e; border: 1px solid #2c2c2c;
+  border-radius: 6px; padding: .5rem .75rem;
 }
 .cu-page  {
-  font-size: .69rem; font-weight: 600; color: #d97757;
-  white-space: nowrap; flex-shrink: 0;
+  font-size: .7rem; font-weight: 700; color: #d97757;
+  white-space: nowrap; flex-shrink: 0; margin-top: .1rem;
+}
+.cu-src-text { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.cu-section {
+  font-size: .74rem; font-weight: 600; color: #e2e2e2;
 }
 .cu-excerpt {
-  font-size: .72rem; color: #444; line-height: 1.4;
+  font-size: .73rem; color: #999; line-height: 1.4;
   overflow: hidden; display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
@@ -361,67 +379,93 @@ def save_chat():
 def _load_embedding_model():
     from langchain_community.embeddings import HuggingFaceEmbeddings
     return HuggingFaceEmbeddings(
-    model_name="BAAI/bge-small-en-v1.5",
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
     encode_kwargs={"normalize_embeddings": True},
 )
 
 @st.cache_resource(show_spinner=False)
 def _load_llm():
-    from langchain_community.llms import Ollama
-    return Ollama(model="mistral")
+    return ChatOpenAI(
+        model=os.getenv("OPENROUTER_MODEL"),
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        temperature=0,
+        timeout=60,
+    )
 
-_PROMPT_TEMPLATE = """You are DocChat, a precise document assistant. Answer the user's question using ONLY the context provided below.
-
-Rules:
-- Use only information present in the context. Do not add outside knowledge.
-- If the answer is not in the context, respond exactly: "I couldn't find that information in this document."
-- Format your answer clearly: use bullet points for lists, **bold** for key terms, and short paragraphs.
-- Be direct. Do not repeat yourself. Do not pad your response.
-- Do not invent names, numbers, dates, or facts.
+PROMPT_TEMPLATE = """
+You are DocChat, an AI assistant that answers questions ONLY from the provided document context.
 
 Context:
 {context}
 
-Question: {question}
+Question:
+{question}
 
-Answer:"""
+Rules:
+- Use only the information in the context.
+- Do not make up facts.
+- If the answer is not found, reply:
+"I couldn't find that information in the document."
 
-def process_pdf(file_path: str):
-    from langchain_community.document_loaders import PyPDFLoader
+Answer:
+"""
+
+prompt = PromptTemplate(
+    template=PROMPT_TEMPLATE,
+    input_variables=["context", "question"],
+)
+
+CACHE_ROOT = "db"
+
+def process_pdf(file_path: str, file_hash: str):
+    from langchain_community.document_loaders import PyMuPDFLoader
     from langchain_community.vectorstores import Chroma
     from langchain.chains import RetrievalQA
     from langchain_community.retrievers import BM25Retriever
     from langchain.retrievers import EnsembleRetriever
     from langchain.prompts import PromptTemplate
 
-    prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template=_PROMPT_TEMPLATE,
-    )
+    cache_dir   = os.path.join(CACHE_ROOT, file_hash)
+    chroma_dir  = os.path.join(cache_dir, "chroma")
+    chunks_path = os.path.join(cache_dir, "chunks.pkl")
 
-    # Load PDF
-    loader = PyPDFLoader(file_path)
-    docs = loader.load()
+    if os.path.exists(chunks_path) and os.path.exists(chroma_dir):
+        # Reuse previously computed chunks + embeddings for this exact file
+        with open(chunks_path, "rb") as f:
+            docs = pickle.load(f)
+        vectordb = Chroma(
+            persist_directory=chroma_dir,
+            embedding_function=_load_embedding_model(),
+        )
+    else:
+        # Load PDF
+        loader = PyMuPDFLoader(file_path)
+        docs = loader.load()
 
-    # Chunk PDF
-    from chunker import split_documents_by_structure
-    docs = split_documents_by_structure(docs)
+        # Chunk PDF
+        from chunker import split_documents_by_structure
+        docs = split_documents_by_structure(docs)
 
-    # Create Vector DB
-    vectordb = Chroma.from_documents(
-        documents=docs,
-        embedding=_load_embedding_model(),
-    )
+        # Create Vector DB
+        os.makedirs(cache_dir, exist_ok=True)
+        vectordb = Chroma.from_documents(
+            documents=docs,
+            embedding=_load_embedding_model(),
+            persist_directory=chroma_dir,
+        )
+        with open(chunks_path, "wb") as f:
+            pickle.dump(docs, f)
 
     # Vector Retriever
     vector_retriever = vectordb.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 5},
+        search_kwargs={"k": 35},
     )
 
     # BM25 Retriever
     bm25_retriever = BM25Retriever.from_documents(docs)
-    bm25_retriever.k = 5
+    bm25_retriever.k = 10
 
     # Hybrid Retriever
     retriever = EnsembleRetriever(
@@ -463,10 +507,13 @@ def render_assistant(content: str, sources: list = None):
         for s in sources:
             if isinstance(s, dict):
                 page    = html_lib.escape(str(s.get("page", "?")))
+                section = html_lib.escape(s.get("section", ""))
                 excerpt = html_lib.escape(s.get("excerpt", ""))
+                heading = f'<span class="cu-section">{section}</span>' if section else ""
                 items  += (f'<div class="cu-src-item">'
                            f'<span class="cu-page">pg {page}</span>'
-                           f'<span class="cu-excerpt">{excerpt}</span>'
+                           f'<span class="cu-src-text">{heading}'
+                           f'<span class="cu-excerpt">{excerpt}</span></span>'
                            f'</div>')
             else:
                 items += (f'<div class="cu-src-item">'
@@ -521,7 +568,7 @@ with st.sidebar:
             with st.spinner("Processing…"):
                 with open("temp.pdf", "wb") as f:
                     f.write(file_bytes)
-                st.session_state.qa       = process_pdf("temp.pdf")
+                st.session_state.qa       = process_pdf("temp.pdf", file_hash)
                 st.session_state.pdf_name = uploaded_file.name
                 st.session_state.pdf_hash = file_hash
         st.markdown(f"""
@@ -541,12 +588,13 @@ with st.sidebar:
 
     st.markdown("<br><br><br><br>", unsafe_allow_html=True)
     st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
-    st.markdown('<p class="sb-label">Running locally</p>', unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown('<p class="sb-label">Stack</p>', unsafe_allow_html=True)
+    llm_name = html_lib.escape(os.getenv("OPENROUTER_MODEL", "unknown model"))
+    st.markdown(f"""
     <div class="model-info">
-      <div class="model-line"><span class="m-dot"></span><span>mistral · Ollama</span></div>
-      <div class="model-line"><span class="m-dot"></span><span>all-MiniLM-L6-v2</span></div>
-      <div class="model-line"><span class="m-dot"></span><span>ChromaDB</span></div>
+      <div class="model-line"><span class="m-dot"></span><span class="model-name" title="{llm_name}">{llm_name}</span><span class="model-tag">cloud</span></div>
+      <div class="model-line"><span class="m-dot"></span><span class="model-name">all-MiniLM-L6-v2</span><span class="model-tag">local</span></div>
+      <div class="model-line"><span class="m-dot"></span><span class="model-name">ChromaDB</span><span class="model-tag">local</span></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -581,9 +629,9 @@ for msg in st.session_state.messages:
     else:
         if msg["content"] == "Please upload a PDF first.":
             render_assistant_warn()
+            
         else:
             render_assistant(msg["content"], msg.get("sources", []))
-            
 # ─── INPUT ───────────────────────────────────────────────────────────────────
 query = st.chat_input("Message DocChat…")
 
@@ -626,19 +674,25 @@ if query:
                     page = str(doc.metadata.get("page", "?"))
                     if page not in seen:
                         seen.add(page)
+                        section = doc.metadata.get("section", "")
+                        body = doc.page_content
+                        if section and body.startswith(section):
+                            body = body[len(section):].lstrip("\n")
                         sources.append({
                             "page": page,
-                            "excerpt": doc.page_content[:150].strip().replace("\n", " "),
+                            "section": section,
+                            "excerpt": body[:150].strip().replace("\n", " "),
                         })
 
                 sources.sort(key=lambda x: x["page"])
 
                 status.update(label="Done", state="complete")
 
-        except Exception:
+        except Exception as e:
+            print(f"[DocChat] Answer generation failed: {type(e).__name__}: {e}")
             answer = (
-                "Something went wrong while generating the answer. "
-                "Please make sure Ollama is running (`ollama serve`) and try again."
+                f"Something went wrong while generating the answer ({type(e).__name__}). "
+                "Please try again in a moment."
             )
             sources = []
 

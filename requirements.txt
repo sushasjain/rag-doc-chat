@@ -110,6 +110,7 @@ pydantic_core==2.41.5
 pydeck==0.9.1
 pydyf==0.12.1
 Pygments==2.19.2
+pymupdf==1.28.0
 pypdf==6.9.1
 pyphen==0.17.2
 PyPika==0.51.1
