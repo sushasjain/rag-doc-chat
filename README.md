@@ -1,55 +1,117 @@
-DocChat – Local RAG PDF Chatbot
+# DocChat
+### AI-Powered Intelligent Document Assistant using Retrieval-Augmented Generation (RAG)
 
-A Retrieval-Augmented Generation (RAG) chatbot that allows users to upload PDF documents and ask natural language questions. The application retrieves relevant document chunks using vector search and generates answers using a local Mistral model running through Ollama.
+DocChat is an intelligent document assistant that allows users to upload PDF documents and ask questions in natural language. Instead of relying on general knowledge, the application retrieves the most relevant sections from the uploaded document and generates accurate, context-aware answers using Retrieval-Augmented Generation (RAG).
 
----
-
-Features
-
--Upload PDF documents
--Chat with your PDFs
--Semantic search using ChromaDB
--Local LLM using Ollama (Mistral)
--Sentence embeddings with all-MiniLM-L6-v2
--Source page references
--Modern Streamlit interface
--Persistent chat history
+Designed with a clean and responsive interface, DocChat combines semantic search, keyword retrieval, vector databases, and Large Language Models to provide fast, reliable, and document-grounded responses.
 
 ---
 
-Tech Stack
+## ✨ Features
 
-- Python
+- 📄 Upload and analyze PDF documents
+- 💬 Ask questions in natural language
+- 🧠 Retrieval-Augmented Generation (RAG)
+- 🔍 Hybrid Retrieval
+  - Semantic Search
+  - BM25 Keyword Search
+- 🤖 AI-generated responses using LLMs
+- 📚 Answers grounded strictly in document context
+- ⚡ Fast document indexing
+- 💾 Persistent ChromaDB vector storage
+- 🌙 Modern responsive Streamlit interface
+
+---
+
+## 🏗 Architecture
+
+```
+                  User
+                    │
+                    ▼
+             Upload PDF Document
+                    │
+                    ▼
+          PDF Processing (PyMuPDF)
+                    │
+                    ▼
+             Document Chunking
+                    │
+                    ▼
+        Sentence Transformer Embeddings
+                    │
+                    ▼
+              Chroma Vector Store
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+        ▼                       ▼
+ Semantic Retriever        BM25 Retriever
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+          Context Fusion & Ranking
+                    │
+                    ▼
+              Prompt Construction
+                    │
+                    ▼
+          Large Language Model (LLM)
+                    │
+                    ▼
+            Context-Based Response
+```
+
+---
+
+## 🛠 Tech Stack
+
+### Frontend
 - Streamlit
+
+### Backend
+- Python
+
+### AI / Machine Learning
 - LangChain
-- Ollama
-- Mistral
-- ChromaDB
 - Sentence Transformers
-- PyPDFLoader
+- ChromaDB
+- BM25 Retriever
+- OpenRouter
+- Google Gemini
+
+### Document Processing
+- PyMuPDF
+
+### Vector Database
+- ChromaDB
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
 ```
-.
-├── app.py
-├── ingest.py
-├── query.py
+LexiMind/
+│
+├── app.py                 # Streamlit application
+├── ingest.py              # PDF ingestion pipeline
+├── chunker.py             # Text chunking
+├── query.py               # Retrieval & response generation
+├── db/                    # Chroma database
+├── .streamlit/
 ├── requirements.txt
-├── data/
-└── .streamlit/
+└── README.md
 ```
 
 ---
 
-## Installation
+## ⚙️ Installation
 
 Clone the repository
 
 ```bash
-git clone https://github.com/sushasjain/rag-doc-chat.git
+git clone https://github.com/yourusername/rag-doc-chat.git
+
 cd rag-doc-chat
 ```
 
@@ -57,7 +119,20 @@ Create a virtual environment
 
 ```bash
 python -m venv venv
+```
+
+Activate
+
+Linux / macOS
+
+```bash
 source venv/bin/activate
+```
+
+Windows
+
+```bash
+venv\Scripts\activate
 ```
 
 Install dependencies
@@ -66,19 +141,25 @@ Install dependencies
 pip install -r requirements.txt
 ```
 
-Run Ollama
+---
 
-```bash
-ollama serve
+## 🔑 Environment Variables
+
+Create a `.env` file.
+
+```
+OPENROUTER_API_KEY=YOUR_API_KEY
 ```
 
-Pull the model
+or
 
-```bash
-ollama pull mistral
+```
+GOOGLE_API_KEY=YOUR_API_KEY
 ```
 
-Start the application
+---
+
+## ▶ Running the Application
 
 ```bash
 streamlit run app.py
@@ -86,22 +167,55 @@ streamlit run app.py
 
 ---
 
-## Screenshots
+## 🚀 Workflow
 
-*(Add screenshots here after deployment.)*
+1. Upload a PDF document.
+2. Extract text using PyMuPDF.
+3. Split the document into semantic chunks.
+4. Generate embeddings using Sentence Transformers.
+5. Store embeddings in ChromaDB.
+6. Retrieve relevant chunks using Hybrid Search (Semantic + BM25).
+7. Construct a context-aware prompt.
+8. Generate grounded responses using an LLM.
 
 ---
 
-## Future Improvements
+## 💡 Future Enhancements
 
-- Multiple PDF support
-- Conversation memory
+- Multi-document support
+- Highlight answer sources
+- Chat history persistence
+- OCR support for scanned PDFs
 - Authentication
-- Cloud deployment
-- Better citation formatting
+- Docker deployment
+- Cloud database support
 
 ---
 
-## License
+## 📸 Screenshots
 
-MIT License
+Add screenshots of the application here.
+
+Example:
+
+```
+Home Screen
+
+Question Answering
+
+Document Upload
+
+Retrieval Results
+```
+
+---
+
+## 📜 License
+
+This project is intended for educational and portfolio purposes.
+
+---
+
+## 👨‍💻 Author
+
+**Susha Jain**
