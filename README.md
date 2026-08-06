@@ -7,23 +7,23 @@ Designed with a clean and responsive interface, DocChat combines semantic search
 
 ---
 
-## ✨ Features
+## Features
 
-- 📄 Upload and analyze PDF documents
-- 💬 Ask questions in natural language
-- 🧠 Retrieval-Augmented Generation (RAG)
-- 🔍 Hybrid Retrieval
+-  Upload and analyze PDF documents
+-  Ask questions in natural language
+-  Retrieval-Augmented Generation (RAG)
+-  Hybrid Retrieval
   - Semantic Search
   - BM25 Keyword Search
-- 🤖 AI-generated responses using LLMs
-- 📚 Answers grounded strictly in document context
-- ⚡ Fast document indexing
-- 💾 Persistent ChromaDB vector storage
-- 🌙 Modern responsive Streamlit interface
+-  AI-generated responses using LLMs
+-  Answers grounded strictly in document context
+-  Fast document indexing
+-  Persistent ChromaDB vector storage
+-  Modern responsive Streamlit interface
 
 ---
 
-## 🏗 Architecture
+##  Architecture
 
 ```
                   User
@@ -64,7 +64,7 @@ Designed with a clean and responsive interface, DocChat combines semantic search
 
 ---
 
-## 🛠 Tech Stack
+##  Tech Stack
 
 ### Frontend
 - Streamlit
@@ -88,7 +88,7 @@ Designed with a clean and responsive interface, DocChat combines semantic search
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 LexiMind/
@@ -105,7 +105,7 @@ LexiMind/
 
 ---
 
-## ⚙️ Installation
+##  Installation
 
 Clone the repository
 
@@ -143,7 +143,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🔑 Environment Variables
+##  Environment Variables
 
 Create a `.env` file.
 
@@ -167,7 +167,7 @@ streamlit run app.py
 
 ---
 
-## 🚀 Workflow
+##  Workflow
 
 1. Upload a PDF document.
 2. Extract text using PyMuPDF.
@@ -180,7 +180,7 @@ streamlit run app.py
 
 ---
 
-## 💡 Future Enhancements
+##  Future Enhancements
 
 - Multi-document support
 - Highlight answer sources
@@ -192,7 +192,7 @@ streamlit run app.py
 
 ---
 
-## 📸 Screenshots
+##  Screenshots
 
 Add screenshots of the application here.
 
@@ -210,12 +210,12 @@ Retrieval Results
 
 ---
 
-## 📜 License
+##  License
 
 This project is intended for educational and portfolio purposes.
 
 ---
 
-## 👨‍💻 Author
+##  Author
 
 **Susha Jain**
