@@ -192,23 +192,6 @@ streamlit run app.py
 
 ---
 
-##  Screenshots
-
-Add screenshots of the application here.
-
-Example:
-
-```
-Home Screen
-
-Question Answering
-
-Document Upload
-
-Retrieval Results
-```
-
----
 
 ##  License
 
