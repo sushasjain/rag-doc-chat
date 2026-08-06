@@ -369,6 +369,8 @@ if "messages" not in st.session_state:
 if "qa"       not in st.session_state: st.session_state.qa       = None
 if "pdf_name" not in st.session_state: st.session_state.pdf_name = None
 if "pdf_hash" not in st.session_state: st.session_state.pdf_hash = None
+if "provider" not in st.session_state:
+    st.session_state.provider = os.getenv("LLM_PROVIDER", "openrouter")
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 def save_chat():
@@ -384,7 +386,14 @@ def _load_embedding_model():
 )
 
 @st.cache_resource(show_spinner=False)
-def _load_llm():
+def _load_llm(provider: str):
+    if provider == "local":
+        from langchain_community.chat_models import ChatOllama
+        return ChatOllama(
+            model=os.getenv("OLLAMA_MODEL", "mistral"),
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            temperature=0,
+        )
     return ChatOpenAI(
         model=os.getenv("OPENROUTER_MODEL"),
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -392,6 +401,11 @@ def _load_llm():
         temperature=0,
         timeout=60,
     )
+
+def current_model_label(provider: str) -> str:
+    if provider == "local":
+        return os.getenv("OLLAMA_MODEL", "mistral")
+    return os.getenv("OPENROUTER_MODEL", "unknown model")
 
 PROMPT_TEMPLATE = """
 You are DocChat, an AI assistant that answers questions ONLY from the provided document context.
@@ -418,7 +432,7 @@ prompt = PromptTemplate(
 
 CACHE_ROOT = "db"
 
-def process_pdf(file_path: str, file_hash: str):
+def process_pdf(file_path: str, file_hash: str, provider: str):
     from langchain_community.document_loaders import PyMuPDFLoader
     from langchain_community.vectorstores import Chroma
     from langchain.chains import RetrievalQA
@@ -475,7 +489,7 @@ def process_pdf(file_path: str, file_hash: str):
 
     # QA Chain
     qa = RetrievalQA.from_chain_type(
-        llm=_load_llm(),
+        llm=_load_llm(provider),
         retriever=retriever,
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt},
@@ -568,7 +582,7 @@ with st.sidebar:
             with st.spinner("Processing…"):
                 with open("temp.pdf", "wb") as f:
                     f.write(file_bytes)
-                st.session_state.qa       = process_pdf("temp.pdf", file_hash)
+                st.session_state.qa       = process_pdf("temp.pdf", file_hash, st.session_state.provider)
                 st.session_state.pdf_name = uploaded_file.name
                 st.session_state.pdf_hash = file_hash
         st.markdown(f"""
@@ -580,6 +594,27 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
     st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
+    st.markdown('<p class="sb-label">Model</p>', unsafe_allow_html=True)
+
+    provider_choice = st.radio(
+        "Model provider",
+        options=["openrouter", "local"],
+        format_func=lambda p: "☁️  OpenRouter (cloud)" if p == "openrouter" else "💻  Local (Ollama)",
+        index=0 if st.session_state.provider == "openrouter" else 1,
+        label_visibility="collapsed",
+        key="provider_radio",
+    )
+
+    if provider_choice != st.session_state.provider:
+        st.session_state.provider = provider_choice
+        # Reuse the already-cached chunks/embeddings on disk — only the LLM
+        # in the chain needs to change, so this is fast, not a re-embed.
+        if st.session_state.pdf_hash:
+            with st.spinner("Switching model…"):
+                st.session_state.qa = process_pdf("temp.pdf", st.session_state.pdf_hash, provider_choice)
+        st.rerun()
+
+    st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
 
     if st.button("🗑  Clear history", key="clear_chat", use_container_width=True):
         st.session_state.messages = []
@@ -589,10 +624,11 @@ with st.sidebar:
     st.markdown("<br><br><br><br>", unsafe_allow_html=True)
     st.markdown('<div class="sb-div"></div>', unsafe_allow_html=True)
     st.markdown('<p class="sb-label">Stack</p>', unsafe_allow_html=True)
-    llm_name = html_lib.escape(os.getenv("OPENROUTER_MODEL", "unknown model"))
+    llm_name = html_lib.escape(current_model_label(st.session_state.provider))
+    llm_tag  = "cloud" if st.session_state.provider == "openrouter" else "local"
     st.markdown(f"""
     <div class="model-info">
-      <div class="model-line"><span class="m-dot"></span><span class="model-name" title="{llm_name}">{llm_name}</span><span class="model-tag">cloud</span></div>
+      <div class="model-line"><span class="m-dot"></span><span class="model-name" title="{llm_name}">{llm_name}</span><span class="model-tag">{llm_tag}</span></div>
       <div class="model-line"><span class="m-dot"></span><span class="model-name">all-MiniLM-L6-v2</span><span class="model-tag">local</span></div>
       <div class="model-line"><span class="m-dot"></span><span class="model-name">ChromaDB</span><span class="model-tag">local</span></div>
     </div>
